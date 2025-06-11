@@ -5,15 +5,15 @@ import { NextResponse } from "next/server";
 import prisma from "@/lib/prisma";
 
 export async function POST(request: Request) {
+  // Get the userId from the authenticated session
+  const { userId } = await auth();
+
+  // If no userId, return unauthorized
+  if (!userId) {
+    return new NextResponse("Unauthorized", { status: 401 });
+  }
+
   try {
-    // 1. Authenticate the user
-    const { userId } = await auth();
-
-    if (!userId) {
-      return new NextResponse("Unauthorized", { status: 401 });
-    }
-
-    // 2. Parse the request body
     const body = await request.json();
     const {
       title,
@@ -26,32 +26,12 @@ export async function POST(request: Request) {
       cuisine,
       difficulty,
       imageUrl,
+      // userId is now coming from Clerk's auth() on the server, not the client body
+      // No need to destructure userId from body anymore
     } = body;
 
-    // --- Basic Validation ---
-    if (!title || !instructions) {
-      return new NextResponse("Title and Instructions are required", {
-        status: 400,
-      });
-    }
-
-    // 3. Find or Create the user in our database using their clerkId
-    let user = await prisma.user.findUnique({
-      where: { clerkId: userId },
-    });
-
-    if (!user) {
-      console.log(`Clerk user ${userId} not found in internal DB. Creating new user record.`);
-      user = await prisma.user.create({
-        data: {
-          clerkId: userId,
-          email: `${userId}@clerk-temp.com`, // Placeholder email for now
-        },
-      });
-    }
-
-    // 4. Create the recipe in the database
-    const recipe = await prisma.recipe.create({
+    // Create the recipe, including the userId from Clerk's auth
+    const newRecipe = await prisma.recipe.create({
       data: {
         title,
         description,
@@ -63,14 +43,13 @@ export async function POST(request: Request) {
         cuisine,
         difficulty,
         imageUrl,
-        authorId: user.id, // Link to our internal User ID
+        userId: userId, // Assign the authenticated user's ID
       },
     });
 
-    // 5. Return the created recipe
-    return NextResponse.json(recipe, { status: 201 });
+    return NextResponse.json(newRecipe, { status: 201 });
   } catch (error) {
-    console.error("[RECIPES_POST]", error);
+    console.error("[RECIPES_POST_ERROR]", error);
     return new NextResponse("Internal Server Error", { status: 500 });
   }
 }
@@ -85,7 +64,7 @@ export async function GET() {
 
     // Find the user in our database
     const user = await prisma.user.findUnique({
-      where: { clerkId: userId },
+      where: { id: userId },
     });
 
     if (!user) {
@@ -95,7 +74,7 @@ export async function GET() {
     // Fetch all recipes authored by this user
     const recipes = await prisma.recipe.findMany({
       where: {
-        authorId: user.id,
+        userId: user.id,
       },
       orderBy: {
         createdAt: "desc", // Order by most recent first

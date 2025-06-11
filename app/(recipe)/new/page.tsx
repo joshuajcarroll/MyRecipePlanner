@@ -3,11 +3,11 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { useUser } from "@clerk/nextjs";
-import { toast } from "react-hot-toast"; // You'll need to install react-hot-toast
+import { useUser } from "@clerk/nextjs"; // Import useUser
+import { toast } from "react-hot-toast";
 
 export default function AddRecipePage() {
-  const {  } = useUser(); // Get the user object for potential pre-filling or checks
+  const { user, isLoaded, isSignedIn } = useUser(); // Get user, isLoaded, isSignedIn
   const router = useRouter();
 
   const [title, setTitle] = useState("");
@@ -26,7 +26,15 @@ export default function AddRecipePage() {
     e.preventDefault();
     setLoading(true);
 
-    // Basic validation (you can expand this)
+    // Client-side check for authentication before sending
+    if (!isLoaded || !isSignedIn || !user?.id) {
+      toast.error("You must be signed in to add a recipe.");
+      setLoading(false);
+      router.push("/"); // Redirect if not signed in, although middleware should mostly handle this
+      return;
+    }
+
+    // Basic validation
     if (!title || !instructions) {
       toast.error("Title and Instructions are required!");
       setLoading(false);
@@ -49,7 +57,9 @@ export default function AddRecipePage() {
           category,
           cuisine,
           difficulty,
-          imageUrl: imageUrl || undefined, // Send as undefined if empty string
+          imageUrl: imageUrl || undefined,
+          // REMOVE userId from the body here - it's now set on the server
+          // userId: user.id, // <--- THIS LINE WAS DELETED
         }),
       });
 
@@ -59,8 +69,8 @@ export default function AddRecipePage() {
       }
 
       toast.success("Recipe added successfully!");
-      router.push("/dashboard"); // Redirect back to the dashboard to see the new recipe
-    } catch (error) {
+      router.push("/dashboard-test"); // Redirect back to the dashboard to see the new recipe
+    } catch (error: unknown) {
       console.error("Error adding recipe:", error);
       if (error instanceof Error) {
         toast.error(error.message || "Something went wrong!");
@@ -71,6 +81,17 @@ export default function AddRecipePage() {
       setLoading(false);
     }
   };
+
+  // Add a loading state for Clerk's user data
+  if (!isLoaded) {
+    return <div className="min-h-screen bg-gray-100 p-8 text-center">Loading user data...</div>;
+  }
+
+  // If user is not signed in and Clerk is loaded, prevent rendering form directly
+  // and potentially show a message before middleware redirects
+  if (!isSignedIn) {
+    return <div className="min-h-screen bg-gray-100 p-8 text-center text-red-500">You must be signed in to view this page. Redirecting...</div>;
+  }
 
   return (
     <div className="min-h-screen bg-gray-100 p-8">
@@ -200,7 +221,7 @@ export default function AddRecipePage() {
             Image URL (optional)
           </label>
           <input
-            type="url" // Use type="url" for URL input
+            type="url"
             id="imageUrl"
             className="shadow appearance-none border rounded w-full py-2 px-3 text-gray-700 leading-tight focus:outline-none focus:shadow-outline"
             value={imageUrl}
@@ -219,7 +240,7 @@ export default function AddRecipePage() {
           </button>
           <button
             type="button"
-            onClick={() => router.back()} // Go back to previous page
+            onClick={() => router.back()}
             className="bg-gray-300 hover:bg-gray-400 text-gray-800 font-bold py-2 px-4 rounded focus:outline-none focus:shadow-outline"
           >
             Cancel

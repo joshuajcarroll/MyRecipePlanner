@@ -1,14 +1,9 @@
 // my-recipe-planner/prisma/schema.prisma
 
-// This is your Prisma schema file,
-// learn more about it in the docs: https://pris.ly/d/prisma-schema
-
 generator client {
   provider = "prisma-client-js"
 }
 
-// For local development, we'll use SQLite.
-// When we move to AWS, we'll switch this to PostgreSQL for RDS.
 datasource db {
   provider = "sqlite"
   url      = env("DATABASE_URL")
@@ -17,37 +12,41 @@ datasource db {
 // --- Models for Recipe Management & Meal Planner ---
 
 // User Model: Stores basic user information and links to Clerk's user ID.
-// Each user can create recipes and meal plans.
+// IMPORTANT: The `id` field must match Clerk's user ID (string).
+// This model is often managed implicitly by Clerk's Prisma integration.
 model User {
-  id         String     @id @default(cuid()) // Unique ID for our internal use
-  clerkId    String     @unique // The ID provided by Clerk for this user
-  email      String     @unique // User's email, should be unique
-  username   String?    @unique // Optional username
-  createdAt  DateTime   @default(now())
-  updatedAt  DateTime   @updatedAt
-  recipes    Recipe[]   // A user can create many recipes
-  mealPlans  MealPlan[] // A user can have many meal plans
+  id        String   @id @unique // Clerk's User ID (not cuid() anymore)
+  // email     String   @unique // You might not need to store these if you fetch them from Clerk's API.
+  // username  String?  @unique // Clerk's SDK provides these.
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt @map(name: "updated_at") // Common convention for updated_at
+
+  recipes   Recipe[]   // A user can create many recipes
+  mealPlans MealPlan[] // A user can have many meal plans
+
+  @@map(name: "users") // Optional: maps model name to table name if different
 }
 
 // Recipe Model: Represents a single recipe.
 model Recipe {
-  id              String            @id @default(cuid())
-  title           String
-  description     String?           
-  instructions    String            
-  prepTimeMinutes Int?
-  cookTimeMinutes Int?
-  servings        Int?
-  category        String?           // e.g., "Breakfast", "Dinner", "Dessert", "Side Dish"
-  cuisine         String?           // e.g., "Italian", "Mexican", "Asian"
-  difficulty      String?           // e.g., "Easy", "Medium", "Hard"
-  imageUrl        String?           // URL to the image stored on AWS S3
-  createdAt       DateTime          @default(now())
-  updatedAt       DateTime          @updatedAt
+  id                String    @id @default(cuid())
+  title             String
+  description       String?
+  instructions      String
+  prepTimeMinutes   Int?
+  cookTimeMinutes   Int?
+  servings          Int?
+  category          String?
+  cuisine           String?
+  difficulty        String?
+  imageUrl          String?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   // Relationship to User: Each recipe belongs to one user (author)
-  authorId        String
-  author          User              @relation(fields: [authorId], references: [id])
+  // Use 'userId' for consistency with Clerk's terminology
+  userId            String // Foreign key to the User model (Clerk's ID)
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade) // Link to the User model's 'id'
 
   // Relationship to Ingredients: Many-to-many through RecipeIngredient
   recipeIngredients RecipeIngredient[]
@@ -58,10 +57,10 @@ model Recipe {
 
 // Ingredient Model: Represents a single ingredient type (e.g., "Salt", "Chicken Breast").
 model Ingredient {
-  id                String            @id @default(cuid())
-  name              String            @unique // e.g., "Salt", "Olive Oil", "Chicken Breast"
-  createdAt         DateTime          @default(now())
-  updatedAt         DateTime          @updatedAt
+  id                String             @id @default(cuid())
+  name              String             @unique // e.g., "Salt", "Olive Oil", "Chicken Breast"
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
 
   // Relationship to Recipes: Many-to-many through RecipeIngredient
   recipeIngredients RecipeIngredient[]
@@ -76,7 +75,7 @@ model RecipeIngredient {
   unit         String? // e.g., "cups", "tsp", "g", "whole"
   notes        String? // e.g., "diced", "freshly ground"
 
-  recipe       Recipe    @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  recipe       Recipe     @relation(fields: [recipeId], references: [id], onDelete: Cascade)
   ingredient   Ingredient @relation(fields: [ingredientId], references: [id], onDelete: Cascade)
 
   @@id([recipeId, ingredientId]) // Composite primary key for uniqueness
@@ -84,16 +83,16 @@ model RecipeIngredient {
 
 // MealPlan Model: Represents a user's meal plan (e.g., "My Weekly Plan").
 model MealPlan {
-  id          String         @id @default(cuid())
-  name        String?        // e.g., "Week 1 Meal Plan"
-  startDate   DateTime       // The start date of the meal plan
-  endDate     DateTime?      // The end date of the meal plan (optional, for fixed duration plans)
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
+  id              String           @id @default(cuid())
+  name            String?          // e.g., "Week 1 Meal Plan"
+  startDate       DateTime         // The start date of the meal plan
+  endDate         DateTime?        // The end date of the meal plan (optional, for fixed duration plans)
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
 
   // Relationship to User: Each meal plan belongs to one user
-  userId      String
-  user        User           @relation(fields: [userId], references: [id])
+  userId          String
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade) // Link to the User model's 'id'
 
   // Relationship to Recipes: Many-to-many through MealPlanRecipe
   mealPlanRecipes MealPlanRecipe[]
@@ -102,14 +101,14 @@ model MealPlan {
 // MealPlanRecipe: A join table to associate specific Recipes with a MealPlan,
 // indicating when the recipe is assigned (e.g., "Dinner on Monday").
 model MealPlanRecipe {
-  mealPlanId  String
-  recipeId    String
+  mealPlanId   String
+  recipeId     String
   assignedDate DateTime // The specific date this recipe is assigned to (e.g., "2025-06-10")
-  mealType    String?  // e.g., "Breakfast", "Lunch", "Dinner", "Snack"
-  notes       String?  // Any specific notes for this meal instance
+  mealType     String?  // e.g., "Breakfast", "Lunch", "Dinner", "Snack"
+  notes        String?  // Any specific notes for this meal instance
 
-  mealPlan    MealPlan @relation(fields: [mealPlanId], references: [id], onDelete: Cascade)
-  recipe      Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  mealPlan     MealPlan @relation(fields: [mealPlanId], references: [id], onDelete: Cascade)
+  recipe       Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
 
   @@id([mealPlanId, recipeId, assignedDate]) // Composite primary key for uniqueness
 }

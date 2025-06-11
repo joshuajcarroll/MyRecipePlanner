@@ -23,18 +23,17 @@ export async function GET(
 
     // Find the user in our database
     const user = await prisma.user.findUnique({
-      where: { clerkId: userId },
+      where: { id: userId },
     });
 
     if (!user) {
       return new NextResponse("User not found in internal DB", { status: 404 });
     }
 
-    // Fetch the specific recipe, ensuring it belongs to the authenticated user
+    // Fetch the specific recipe by its unique ID
     const recipe = await prisma.recipe.findUnique({
       where: {
         id: recipeId,
-        authorId: user.id, // Crucial: ensure user owns the recipe
       },
       // You can include related data if needed
       // include: {
@@ -46,7 +45,8 @@ export async function GET(
       // }
     });
 
-    if (!recipe) {
+    // Ensure the recipe exists and belongs to the authenticated user
+    if (!recipe || recipe.userId !== user.id) {
       return new NextResponse("Recipe not found or you don't have access", { status: 404 });
     }
 
